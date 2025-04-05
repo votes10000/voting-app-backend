@@ -1,0 +1,830 @@
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Financial Dashboard</title>
+          
+          <script src="https://cdn.tailwindcss.com"></script>
+          
+          <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+          
+          <style>
+            /* Custom styles beyond Tailwind */
+            .fade-in {
+              animation: fadeIn 0.3s ease-in-out;
+            }
+            
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            
+            .toast {
+              position: fixed;
+              bottom: 20px;
+              right: 20px;
+              padding: 12px 20px;
+              background-color: #4CAF50;
+              color: white;
+              border-radius: 8px;
+              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+              z-index: 1000;
+              transform: translateY(100px);
+              transition: transform 0.3s ease-out;
+            }
+            
+            .toast.show {
+              transform: translateY(0);
+            }
+          </style>
+        </head>
+        <body class="bg-black min-h-screen text-white">
+          <div id="app" class="min-h-screen flex flex-col"></div>
+
+          <script>
+            // Supabase Client Setup (Replace with your actual credentials)
+            const supabaseUrl =            'https://uetvnlynriumqaqqhbrs.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVldHZubHlucml1bXFhcXFoYnJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4Mzg2NzYsImV4cCI6MjA1OTQxNDY3Nn0._GZAI_lNP_vh2Nje4Gs9kebucmO5AnPLRtIjGt5WDeM';
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+async function testSupabase() {
+  try {
+    const { data, error } = await supabase.from('users').select('*').limit(1);
+
+    if (error) {
+      console.error('Supabase test error:', error);
+      showToast('Supabase test failed. Check console.', 5000); // User feedback
+    } else {
+      console.log('Supabase test successful:', data);
+      showToast('Supabase test successful!', 3000); // User feedback
+    }
+  } catch (error) {
+     console.error('Supabase test error:', error);
+     showToast('Supabase test failed. Unexpected error.', 5000);
+  }
+}
+
+testSupabase();
+
+
+            // User data schema and app structure
+            const currencySymbols = {
+              'USD': '$',
+              'EUR': '€',
+              'GBP': '£',
+              'JPY': '¥',
+              'CAD': 'C$',
+              'AUD': 'A$',
+              'INR': '₹',
+              'CNY': '¥',
+              'BTC': '₿',
+              'ETH': 'Ξ'
+            };
+
+            // Demo users for the standalone version (Not used with Supabase)
+            const demoUsers = [
+              {
+                username: "admin",
+                password: "090926",
+                email: "admin@gmail.com",
+                fullName: "Bit-Digital Mining",
+                phoneNumber: "123-456-7890",
+                currency: "USD",
+                balance: "0.00",
+                bonus: "0.00",
+                completedWithdrawal: "1250.00",
+                isAdmin: true,
+                balanceUpdated: "just now",
+                bonusUpdated: "just now",
+                withdrawalUpdated: "just now"
+              },
+              {
+                username: "info@",
+                password: "09092644023Happy",
+                email: "info@bit-digital-mining.online",
+                fullName: "info @",
+                phoneNumber: "987-654-3210",
+                currency: "EUR",
+                balance: "0.00",
+                bonus: "0.00",
+                completedWithdrawal: "0.00",
+                isAdmin: false,
+                balanceUpdated: "just now",
+                bonusUpdated: "just now",
+                withdrawalUpdated: "just now"
+              }
+            ];
+
+            // Initialize local storage with demo users if not already present (Not used with Supabase)
+            // if (!localStorage.getItem('demoUsers')) {
+            //   localStorage.setItem('demoUsers', JSON.stringify(demoUsers));
+            // }
+
+            // Application state
+            let currentUser = null;
+            let isAdminMode = false;
+
+            // Utility functions
+            function formatCurrency(value) {
+              const numValue = parseFloat(value);
+              return new Intl.NumberFormat("en-US").format(numValue);
+            }
+
+            function showToast(message, duration = 3000) {
+              const toast = document.createElement('div');
+              toast.className = 'toast';
+              toast.textContent = message;
+              document.body.appendChild(toast);
+              
+              // Force reflow to ensure the animation works
+              void toast.offsetWidth;
+              
+              toast.classList.add('show');
+              
+              setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                  document.body.removeChild(toast);
+                }, 300);
+              }, duration);
+            }
+
+            // function getCurrentUser() {  // Replaced with Supabase auth
+            //   const username = localStorage.getItem('currentUsername');
+            //   if (!username) return null;
+              
+            //   const users = JSON.parse(localStorage.getItem('demoUsers'));
+            //   return users.find(user => user.username === username);
+            // }
+
+            // function updateUserData(updatedUser) { // Replaced with Supabase
+            //   const users = JSON.parse(localStorage.getItem('demoUsers'));
+            //   const index = users.findIndex(user => user.username === updatedUser.username);
+              
+            //   if (index !== -1) {
+            //     users[index] = updatedUser;
+            //     localStorage.setItem('demoUsers', JSON.stringify(users));
+            //     currentUser = updatedUser;
+            //     return true;
+            //   }
+              
+            //   return false;
+            // }
+
+            // Supabase functions
+            async function registerUser(email, password, fullName, phoneNumber, currency) {
+              try {
+                const { data, error } = await supabase.auth.signUp({
+                  email,
+                  password,
+                  options: {
+                    data: {
+                      fullName,
+                      phoneNumber,
+                      currency
+                    }
+                  }
+                });
+
+                if (error) {
+                  console.error('Registration error:', error);
+                  showToast(`Registration failed: ${error.message}`, 5000);
+                  return { error };
+                }
+
+                console.log('User registered successfully:', data);
+                showToast('Registration successful! Check your email to confirm.', 5000);
+                return { data };
+              } catch (err) {
+                console.error('Unexpected Registration error:', err);
+                 showToast(`Unexpected registration error: ${err.message}`, 5000);
+                return { error: err };
+              }
+            }
+
+            async function signInUser(email, password) {
+              try {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                  email,
+                  password
+                });
+
+                if (error) {
+                  console.error('Login error:', error);
+                  showToast(`Login failed: ${error.message}`, 5000);
+                  return { error };
+                }
+
+                console.log('User logged in successfully:', data);
+                // Fetch user data after login
+                await fetchUserData();
+                renderDashboard(); // Or navigate to the dashboard
+                return { data };
+              } catch (err) {
+                console.error('Unexpected Login error:', err);
+                showToast(`Unexpected login error: ${err.message}`, 5000);
+                return { error: err };
+              }
+            }
+
+            async function fetchUserData() {
+              try {
+                const { data: { user }, error } = await supabase.auth.getUser();
+
+                if (error) {
+                  console.error('Error fetching user data:', error);
+                  return;
+                }
+
+                currentUser = user.user_metadata;
+                currentUser.id = user.id; // Store the user ID
+                console.log('User data fetched:', currentUser);
+
+              } catch (error) {
+                console.error('Unexpected error fetching user data:', error);
+              }
+            }
+
+            async function updateUserBalances(id, balance, bonus, withdraws) {
+              try {
+                 const { data, error } = await supabase
+                  .from('users')
+                  .update({ balance, bonus, withdraws })
+                  .eq('id', id);
+
+                if (error) {
+                  console.error('Update balances error:', error);
+                  showToast(`Balance update failed: ${error.message}`, 5000);
+                  return { error };
+                }
+
+                console.log('User balances updated successfully:', data);
+                showToast('Balances updated successfully!', 3000);
+                // Refresh user data after update
+                await fetchUserData();
+                renderDashboard();
+                return { data };
+              } catch (err) {
+                console.error('Unexpected Update error:', err);
+                 showToast(`Unexpected balance update error: ${err.message}`, 5000);
+                return { error: err };
+              }
+            }
+
+            async function handleLogout() {
+              try {
+                const { error } = await supabase.auth.signOut();
+                if (error) {
+                  console.error('Logout error:', error);
+                  showToast(`Logout failed: ${error.message}`, 5000);
+                } else {
+                  console.log('User logged out');
+                  currentUser = null;
+                  renderLoginPage();
+                }
+              } catch (error) {
+                console.error('Unexpected logout error:', error);
+                 showToast(`Unexpected logout error: ${error.message}`, 5000);
+              }
+            }
+
+            // Component rendering functions
+            function renderHeader() {
+              const header = document.createElement('header');
+              header.className = 'bg-gray-900 shadow';
+              
+              header.innerHTML = `
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                  <div class="flex justify-between items-center">
+                    <h1 class="text-xl font-bold text-white">Financial Dashboard</h1>
+                    <div class="flex items-center space-x-4">
+                      <span class="text-sm text-gray-300">Welcome, ${currentUser?.fullName || 'User'}</span>
+                      ${currentUser?.isAdmin ? 
+                        `<button id="admin-toggle" class="px-3 py-1 bg-blue-700 text-white rounded text-sm hover:bg-blue-800 transition">
+                          ${isAdminMode ? 'Exit Admin Mode' : 'Admin Mode'}
+                        </button>` : ''
+                      }
+                        <button id="logout-btn" class="px-3 py-1 bg-red-700 text-white rounded text-sm hover:bg-red-800 transition">Logout</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+              
+              return header;
+            }
+
+            function renderDashboard() {
+              const dashboard = document.createElement('div');
+              dashboard.className = 'flex-grow p-4 space-y-4';
+
+              if (!currentUser) {
+                return renderLoginPage(); // Redirect to login if no user
+              }
+              
+              dashboard.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  ${renderBalanceCard()}
+                  ${renderBonusCard()}
+                  ${renderWithdrawalCard()}
+                </div>
+                ${renderTransactionHistory()}
+              `;
+              
+              return dashboard;
+            }
+
+            function renderBalanceCard() {
+              return `
+                <div class="bg-gray-800 p-6 rounded-lg shadow fade-in">
+                  <h2 class="text-lg font-semibold mb-4">Balance</h2>
+                  <p class="text-4xl font-bold">${currencySymbols[currentUser?.currency || 'USD']}${formatCurrency(currentUser?.balance || '0.00')}</p>
+                  <p class="text-sm text-gray-400 mt-2">Updated: ${currentUser?.balanceUpdated || 'just now'}</p>
+                  <button id="update-balance" class="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Update Balance</button>
+                </div>
+              `;
+            }
+
+            function renderBonusCard() {
+              return `
+                <div class="bg-gray-800 p-6 rounded-lg shadow fade-in">
+                  <h2 class="text-lg font-semibold mb-4">Bonus</h2>
+                  <p class="text-4xl font-bold">${currencySymbols[currentUser?.currency || 'USD']}${formatCurrency(currentUser?.bonus || '0.00')}</p>
+                  <p class="text-sm text-gray-400 mt-2">Updated: ${currentUser?.bonusUpdated || 'just now'}</p>
+                  <button id="update-bonus" class="mt-4 w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Update Bonus</button>
+                </div>
+              `;
+            }
+
+            function renderWithdrawalCard() {
+              return `
+                <div class="bg-gray-800 p-6 rounded-lg shadow fade-in">
+                  <h2 class="text-lg font-semibold mb-4">Completed Withdrawal</h2>
+                  <p class="text-4xl font-bold">${currencySymbols[currentUser?.currency || 'USD']}${formatCurrency(currentUser?.completedWithdrawal || '0.00')}</p>
+                  <p class="text-sm text-gray-400 mt-2">Updated: ${currentUser?.withdrawalUpdated || 'just now'}</p>
+                  <button id="update-withdrawal" class="mt-4 w-full px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition">Update Withdrawal</button>
+                </div>
+              `;
+            }
+
+            function renderTransactionHistory() {
+              return `
+                <div class="bg-gray-800 p-6 rounded-lg shadow fade-in">
+                  <h2 class="text-lg font-semibold mb-4">Transaction History</h2>
+                  <p class="text-gray-400">No transactions recorded yet.</p>
+                </div>
+              `;
+            }
+
+            function renderAdminPanel() {
+              const adminPanel = document.createElement('div');
+              adminPanel.className = 'flex-grow p-4';
+              
+              const allUsers = JSON.parse(localStorage.getItem('demoUsers')); // This will need to be replaced with a Supabase query
+              
+              adminPanel.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4">Admin Panel - Manage Users</h2>
+                <div class="overflow-x-auto">
+                  <table class="min-w-full bg-gray-800 rounded-lg shadow">
+                    <thead>
+                      <tr>
+                        <th class="px-4 py-2 text-left">Username</th>
+                        <th class="px-4 py-2 text-left">Email</th>
+                        <th class="px-4 py-2 text-left">Balance</th>
+                        <th class="px-4 py-2 text-left">Bonus</th>
+                        <th class="px-4 py-2 text-left">Withdrawal</th>
+                        <th class="px-4 py-2 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${allUsers.map(user => `
+                        <tr>
+                          <td class="border px-4 py-2">${user.username}</td>
+                          <td class="border px-4 py-2">${user.email}</td>
+                          <td class="border px-4 py-2">${currencySymbols[user.currency]}${formatCurrency(user.balance)}</td>
+                          <td class="border px-4 py-2">${currencySymbols[user.currency]}${formatCurrency(user.bonus)}</td>
+                          <td class="border px-4 py-2">${currencySymbols[user.currency]}${formatCurrency(user.completedWithdrawal)}</td>
+                          <td class="border px-4 py-2">
+                            <button data-username="${user.username}" class="edit-user px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition">Edit</button>
+                            <button data-username="${user.username}" class="delete-user px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition">Delete</button>
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `;
+              
+              return adminPanel;
+            }
+
+            function renderLoginForm() {
+              const main = document.createElement('main');
+              main.className = 'max-w-md mx-auto mt-20 p-6 bg-gray-800 rounded-lg shadow-md fade-in';
+              
+              main.innerHTML = `
+                <h2 class="text-2xl font-bold text-white mb-6 text-center">Login / Register</h2>
+                <form id="auth-form" class="space-y-6">
+                  <div class="space-y-2">
+                    <label for="login-email" class="block text-sm font-medium text-gray-200">Email</label>
+                    <input
+                      id="login-email"
+                      type="email"
+                      placeholder="Enter your email"
+                      class="block w-full px-3 py-2 border border-gray-600 bg-gray-800 text-white rounded-md shadow-sm"
+                      required
+                    />
+                  </div>
+                  <div class="space-y-2">
+                    <label for="login-password" class="block text-sm font-medium text-gray-200">Password</label>
+                    <input
+                      id="login-password"
+                      type="password"
+                      placeholder="Enter your password"
+                      class="block w-full px-3 py-2 border border-gray-600 bg-gray-800 text-white rounded-md shadow-sm"
+                      required
+                    />
+                  </div>
+                  
+                  <div id="register-fields" class="hidden space-y-4">
+                    <div class="space-y-2">
+                      <label for="register-fullName" class="block text-sm font-medium text-gray-200">Full Name</label>
+                      <input
+                        id="register-fullName"
+                        type="text"
+                        placeholder="Enter your full name"
+                        class="block w-full px-3 py-2 border border-gray-600 bg-gray-800 text-white rounded-md shadow-sm"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <label for="register-phoneNumber" class="block text-sm font-medium text-gray-200">Phone Number</label>
+                      <input
+                        id="register-phoneNumber"
+                        type="tel"
+                        placeholder="Enter your phone number"
+                        class="block w-full px-3 py-2 border border-gray-600 bg-gray-800 text-white rounded-md shadow-sm"
+                      />
+                    </div>
+                     <div class="space-y-2">
+                      <label for="register-currency" class="block text-sm font-medium text-gray-200">Preferred Currency</label>
+                      <select
+                        id="register-currency"
+                        class="block w-full px-3 py-2 border border-gray-600 bg-gray-800 text-white rounded-md shadow-sm"
+                      >
+                        ${Object.entries(currencySymbols).map(([code, symbol]) => 
+                          `<option value="${code}">${code} (${symbol})</option>`
+                        ).join('')}
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    id="submit-btn"
+                    class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                  >
+                    Login
+                  </button>
+                  <div class="mt-4 text-center">
+                    <button
+                      type="button"
+                      id="toggle-form"
+                      class="text-sm text-blue-400 hover:text-blue-300"
+                    >
+                      Don't have an account? Register
+                    </button>
+                  </div>
+                  <div class="mt-6 text-center text-sm text-gray-400">
+                   
+                  </div>
+                </form>
+              `;
+
+              return main;
+            }
+
+            function renderDashboard() {
+              const app = document.getElementById('app');
+              app.innerHTML = '';
+              
+              // Add header
+              app.appendChild(renderHeader());
+              
+              // Add main content
+              app.appendChild(renderDashboard());
+              
+              // Add footer (if any)
+              
+              // Add event listeners
+              document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
+              
+              if (currentUser?.isAdmin) {
+                document.getElementById('admin-toggle')?.addEventListener('click', toggleAdminMode);
+              }
+
+              document.getElementById('update-balance')?.addEventListener('click', () => handleUpdateBalances('balance'));
+              document.getElementById('update-bonus')?.addEventListener('click', () => handleUpdateBalances('bonus'));
+              document.getElementById('update-withdrawal')?.addEventListener('click', () => handleUpdateBalances('withdraws'));
+              
+              // Add click event for all edit user buttons (if in admin mode)
+              if (isAdminMode) {
+                const editButtons = document.querySelectorAll('.edit-user-btn');
+                editButtons.forEach(button => {
+                  button.addEventListener('click', () => {
+                    const username = button.getAttribute('data-username');
+                    const users = JSON.parse(localStorage.getItem('demoUsers')); // Replace with Supabase query
+                    const selectedUser = users.find(u => u.username === username);
+                    
+                    if (selectedUser) {
+                      window.selectedUser = selectedUser;
+                      renderDashboard();
+                      showToast(`Now editing ${username}'s information`);
+                    }
+                  });
+                });
+              }
+            }
+
+             async function handleUpdateBalances(field) {
+                const newValue = prompt(`Enter new value for ${field}:`);
+                if (newValue !== null) {
+                  const updateData = {};
+                  updateData[field] = parseFloat(newValue); // Ensure it's a number
+
+                  if (isNaN(updateData[field])) {
+                    showToast('Invalid input. Please enter a number.', 3000);
+                    return;
+                  }
+
+                  const result = await updateUserBalances(currentUser.id, field === 'balance' ? updateData.balance : currentUser.balance, field === 'bonus' ? updateData.bonus : currentUser.bonus, field === 'withdraws' ? updateData.withdraws : currentUser.completedWithdrawal);
+
+                  if (!result.error) {
+                    showToast(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`, 3000);
+                  }
+                }
+              }
+
+            // Initialization
+            function init() {
+              const app = document.getElementById('app');
+              app.appendChild(renderLoginForm());
+
+              const authForm = document.getElementById('auth-form');
+              const toggleFormBtn = document.getElementById('toggle-form');
+              const registerFields = document.getElementById('register-fields');
+              const submitBtn = document.getElementById('submit-btn');
+
+              let isRegistering = false;
+
+              toggleFormBtn.addEventListener('click', () => {
+                isRegistering = !isRegistering;
+                registerFields.classList.toggle('hidden');
+                submitBtn.textContent = isRegistering ? 'Register' : 'Login';
+                toggleFormBtn.textContent = isRegistering ? 'Already have an account? Login' : 'Don\'t have an account? Register';
+              });
+
+              authForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
+
+                if (isRegistering) {
+                  const fullName = document.getElementById('register-fullName').value;
+                  const phoneNumber = document.getElementById('register-phoneNumber').value;
+                  const currency = document.getElementById('register-currency').value;
+
+                  if (!fullName || !phoneNumber || !currency) {
+                    showToast('Please fill in all registration fields.', 3000);
+                    return;
+                  }
+
+                  await registerUser(email, password, fullName, phoneNumber, currency);
+                } else {
+                  await signInUser(email, password);
+                }
+              });
+
+              // Check for existing session on page load
+              supabase.auth.onAuthStateChange((event, session) => {
+                if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+                  fetchUserData().then(() => {
+                    renderDashboard();
+                  });
+                } else if (event === 'SIGNED_OUT') {
+                  currentUser = null;
+                  renderLoginPage();
+                }
+              });
+            }
+
+    // Add event listeners
+    const authForm = document.getElementById('auth-form');
+    const toggleForm = document.getElementById('toggle-form');
+    const formTitle = document.getElementById('form-title');
+    const registerFields = document.getElementById('register-fields');
+    const submitBtn = document.getElementById('submit-btn');
+
+    let isRegistering = false;
+
+    toggleForm.addEventListener('click', () => {
+      isRegistering = !isRegistering;
+      registerFields.classList.toggle('hidden');
+
+      if (isRegistering) {
+        formTitle.textContent = 'Create an Account';
+        submitBtn.textContent = 'Register';
+        toggleForm.textContent = 'Already have an account? Login';
+      } else {
+        formTitle.textContent = 'Login to Dashboard';
+        submitBtn.textContent = 'Login';
+        toggleForm.textContent = "Don't have an account? Register";
+      }
+    });
+
+    authForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      if (isRegistering) {
+        // Register new user
+        const email = document.getElementById('email').value;
+        const fullName = document.getElementById('fullName').value;
+        const phoneNumber = document.getElementById('phoneNumber').value;
+        const currency = document.getElementById('currency').value;
+
+        handleRegister(username, password, email, fullName, phoneNumber, currency);
+      } else {
+        // Login existing user
+        handleLogin(username, password);
+      }
+    });
+  }
+
+  // Event handlers
+  function handleLogin(username, password) {
+    const users = JSON.parse(localStorage.getItem('demoUsers'));
+    const user = users.find(u => u.username === username && u.password === password);
+
+    if (user) {
+      localStorage.setItem('currentUsername', username);
+      currentUser = user;
+      renderDashboard();
+      showToast('Login successful! Welcome back.');
+    } else {
+      showToast('Invalid username or password.', 5000);
+    }
+  }
+
+  function handleRegister(username, password, email, fullName, phoneNumber, currency) {
+    const users = JSON.parse(localStorage.getItem('demoUsers'));
+
+    if (users.some(u => u.username === username)) {
+      showToast('Username already exists. Please choose a different one.', 5000);
+      return;
+    }
+
+    const newUser = {
+      username,
+      password,
+      email,
+      fullName,
+      phoneNumber,
+      currency,
+      balance: "0.00",
+      bonus: "0.00",
+      completedWithdrawal: "0.00",
+      isAdmin: false,
+      balanceUpdated: "Never",
+      bonusUpdated: "Never",
+      withdrawalUpdated: "Never",
+      activities: [] // Initialize with empty activities
+    };
+
+    users.push(newUser);
+    localStorage.setItem('demoUsers', JSON.stringify(users));
+    localStorage.setItem('currentUsername', username);
+
+    currentUser = newUser;
+    renderDashboard();
+    showToast('Registration successful! Your account has been created.');
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('currentUsername');
+    currentUser = null;
+    isAdminMode = false;
+    renderLoginPage();
+    showToast('You have been logged out.');
+  }
+
+  function toggleAdminMode() {
+    isAdminMode = !isAdminMode;
+    renderDashboard();
+    showToast(isAdminMode ? 'Admin mode activated.' : 'Exited admin mode.');
+  }
+
+  function handleSaveChanges() {
+    const username = document.getElementById('edit-username').value;
+    const balance = document.getElementById('edit-balance').value;
+    const bonus = document.getElementById('edit-bonus').value;
+    const withdrawal = document.getElementById('edit-withdrawal').value;
+
+    // Validate inputs as numbers
+    if (isNaN(parseFloat(balance)) || isNaN(parseFloat(bonus)) || isNaN(parseFloat(withdrawal))) {
+      showToast('Please enter valid numbers for all fields.', 5000);
+      return;
+    }
+
+    // Get the user to be updated
+    const users = JSON.parse(localStorage.getItem('demoUsers'));
+    const userToUpdate = users.find(u => u.username === username);
+
+    if (!userToUpdate) {
+      showToast('User not found. Please try again.', 5000);
+      return;
+    }
+
+    // Track activity
+    const now = new Date();
+    const timeString = "Just now";
+    const currencySymbol = currencySymbols[userToUpdate.currency] || '$';
+
+    const activities = userToUpdate.activities || [];
+    const newActivities = [];
+
+    // Check if values changed and add activity entry
+    if (parseFloat(userToUpdate.balance) !== parseFloat(balance)) {
+      const diff = parseFloat(balance) - parseFloat(userToUpdate.balance);
+      const prefix = diff >= 0 ? '+' : '';
+      newActivities.push({
+        type: 'balance',
+        description: 'Balance Updated',
+        time: timeString,
+        amount: `${prefix}${currencySymbol}${Math.abs(diff).toFixed(2)}`
+      });
+    }
+
+    if (parseFloat(userToUpdate.bonus) !== parseFloat(bonus)) {
+      const diff = parseFloat(bonus) - parseFloat(userToUpdate.bonus);
+      const prefix = diff >= 0 ? '+' : '';
+      newActivities.push({
+        type: 'bonus',
+        description: 'Bonus Updated',
+        time: timeString,
+        amount: `${prefix}${currencySymbol}${Math.abs(diff).toFixed(2)}`
+      });
+    }
+
+    if (parseFloat(userToUpdate.completedWithdrawal) !== parseFloat(withdrawal)) {
+      const diff = parseFloat(withdrawal) - parseFloat(userToUpdate.completedWithdrawal);
+      newActivities.push({
+        type: 'withdrawal',
+        description: 'Withdrawal Processed',
+        time: timeString,
+        amount: `${currencySymbol}${Math.abs(diff).toFixed(2)}`
+      });
+    }
+
+    // Update user data
+    const updatedUser = {
+      ...userToUpdate,
+      balance,
+      bonus,
+      completedWithdrawal: withdrawal,
+      balanceUpdated: timeString,
+      bonusUpdated: timeString,
+      withdrawalUpdated: timeString,
+      activities: [...newActivities, ...activities]
+    };
+
+    // Update the user in users array and save
+    const updatedUsers = users.map(u => u.username === username ? updatedUser : u);
+    localStorage.setItem('demoUsers', JSON.stringify(updatedUsers));
+
+    // If the updated user is the current user, update currentUser
+    if (username === currentUser.username) {
+      currentUser = updatedUser;
+    } else {
+      // Keep the selected user reference for the admin
+      window.selectedUser = updatedUser;
+    }
+
+    showToast('Changes saved successfully!');
+    renderDashboard();
+  }
+
+  // Initialize app
+  document.addEventListener('DOMContentLoaded', () => {
+    currentUser = getCurrentUser();
+
+    if (currentUser) {
+      renderDashboard();
+    } else {
+      renderLoginPage();
+    }
+  });
+</script>
+</body>
+</html>
